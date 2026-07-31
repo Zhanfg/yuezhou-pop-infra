@@ -1,0 +1,18 @@
+# Merge this fragment into an application's compose.yaml.
+# Keep real credentials in the application's private .env file.
+services:
+  app:
+    image: your-application-image:latest
+    environment:
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      DATABASE_NAME: ${APP_DATABASE_NAME}
+      DATABASE_USER: ${APP_DATABASE_USER}
+      DATABASE_PASSWORD: ${APP_DATABASE_PASSWORD}
+    networks:
+      - data_net
+
+networks:
+  data_net:
+    external: true
+    name: onepanel-data-net
