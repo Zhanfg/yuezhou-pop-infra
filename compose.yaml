@@ -1,0 +1,81 @@
+name: ${STACK_NAME}
+
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE}
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "${POSTGRES_BIND_IP}:${POSTGRES_PORT}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      data_net:
+        aliases:
+          - postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    security_opt:
+      - no-new-privileges:true
+
+  adminer:
+    image: ${ADMINER_IMAGE}
+    profiles: ["tools"]
+    restart: unless-stopped
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+    ports:
+      - "${ADMINER_BIND_IP}:${ADMINER_PORT}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - data_net
+    security_opt:
+      - no-new-privileges:true
+
+  valkey:
+    image: ${VALKEY_IMAGE}
+    profiles: ["cache"]
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ}
+      VALKEY_PASSWORD: ${VALKEY_PASSWORD}
+    command:
+      - sh
+      - -ec
+      - exec valkey-server --appendonly yes --requirepass "$${VALKEY_PASSWORD}"
+    ports:
+      - "${VALKEY_BIND_IP}:${VALKEY_PORT}:6379"
+    volumes:
+      - valkey_data:/data
+    networks:
+      data_net:
+        aliases:
+          - valkey
+    healthcheck:
+      test: ["CMD-SHELL", "valkey-cli -a \"$${VALKEY_PASSWORD}\" ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+
+networks:
+  data_net:
+    name: ${DOCKER_NETWORK_NAME}
+
+volumes:
+  postgres_data:
+    name: ${STACK_NAME}_postgres_data
+  valkey_data:
+    name: ${STACK_NAME}_valkey_data

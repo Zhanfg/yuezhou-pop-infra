@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Validate shell syntax
+        run: bash -n stack.sh
+
+      - name: Run ShellCheck
+        run: shellcheck stack.sh
+
+      - name: Validate Docker Compose
+        run: |
+          cp .env.example .env
+          sed -i 's/GENERATED_ON_INSTALL/test-only-placeholder/g' .env
+          docker compose --env-file .env -f compose.yaml config --quiet
