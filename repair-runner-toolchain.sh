@@ -46,15 +46,26 @@ else
   curl -fL --retry 3 -o "$TMP/SHASUMS256.txt" "$BASE/SHASUMS256.txt"
   (cd "$TMP" && grep -F "  $ASSET" SHASUMS256.txt | sha256sum -c -)
 
-  mkdir -p /usr/local/lib/nodejs
+  install -d -o root -g root -m 0755 /usr/local/lib/nodejs
   tar -xJf "$TMP/$ASSET" -C /usr/local/lib/nodejs
   PREFIX="/usr/local/lib/nodejs/node-${VERSION}-linux-${NODE_ARCH}"
+  chmod 0755 /usr/local/lib/nodejs
+  chmod -R a+rX "$PREFIX"
   for binary in node npm npx corepack; do
     [[ -x "$PREFIX/bin/$binary" ]] && ln -sfn "$PREFIX/bin/$binary" "/usr/local/bin/$binary"
   done
   [[ $(/usr/local/bin/node --version) == "$VERSION" ]] || die "Node.js verification failed"
   /usr/local/bin/npm --version >/dev/null
   log "Installed Node.js $VERSION"
+fi
+
+# Repair permissions from v1 installations where umask 077 made the Node tree root-only.
+if [[ -L /usr/local/bin/node ]]; then
+  NODE_TARGET=$(readlink -f /usr/local/bin/node)
+  NODE_PREFIX=$(dirname "$(dirname "$NODE_TARGET")")
+  [[ $NODE_PREFIX == /usr/local/lib/nodejs/* ]] || die "Unexpected Node.js target: $NODE_TARGET"
+  chmod 0755 /usr/local/lib/nodejs
+  chmod -R a+rX "$NODE_PREFIX"
 fi
 
 install -d -o "$RUNNER_USER" -g "$RUNNER_USER" -m 700 "/home/$RUNNER_USER/.npm"
@@ -65,6 +76,7 @@ cat > "$DROPIN/toolchain.conf" <<EOF
 Environment="PATH=$SERVICE_PATH"
 Environment="npm_config_cache=/home/$RUNNER_USER/.npm"
 EOF
+chmod 0644 "$DROPIN/toolchain.conf"
 
 systemctl daemon-reload
 systemctl restart "$SERVICE_NAME"
