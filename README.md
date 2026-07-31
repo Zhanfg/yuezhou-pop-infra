@@ -60,7 +60,7 @@ sudo bash stack.sh up tools,cache
 恢复备份属于破坏性操作，必须显式确认：
 
 ```bash
-sudo bash stack.sh restore /path/to/backup.sql.gz --yes
+sudo bash stack.sh restore /path/to/backup.dump --yes
 ```
 
 ## 让其他容器连接数据库
