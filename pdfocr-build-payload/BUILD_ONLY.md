@@ -1,0 +1,1 @@
+Temporary build-only branch for compiling the PDF OCR Android APK. Do not merge.
