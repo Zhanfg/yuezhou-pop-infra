@@ -24,8 +24,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cat pdfocr-build-payload/part*.b64 | base64 -d > /tmp/PdfOcrBookApp.zip
+          cat pdfocr-build-payload/part*.b64 \
+            | tr -cd 'A-Za-z0-9+/=' \
+            > /tmp/PdfOcrBookApp.b64
+          echo "Base64 characters: $(wc -c < /tmp/PdfOcrBookApp.b64)"
+          base64 -d /tmp/PdfOcrBookApp.b64 > /tmp/PdfOcrBookApp.zip
+          sha256sum /tmp/PdfOcrBookApp.zip
           echo "fe060d791f7e73e8f9c31f121b33ae7c305278aa0a675cdcb1710bb3e6160966  /tmp/PdfOcrBookApp.zip" | sha256sum -c -
+          unzip -t /tmp/PdfOcrBookApp.zip
           mkdir -p /tmp/pdfocr
           unzip -q /tmp/PdfOcrBookApp.zip -d /tmp/pdfocr
           test -f /tmp/pdfocr/PdfOcrBookApp/settings.gradle.kts
@@ -54,6 +60,7 @@ jobs:
           set -euo pipefail
           APK=/tmp/pdfocr/PdfOcrBookApp/app/build/outputs/apk/debug/app-debug.apk
           test -s "$APK"
+          unzip -t "$APK"
           cp "$APK" /tmp/PDF智能拆书OCR-v1.0.0-debug.apk
           sha256sum /tmp/PDF智能拆书OCR-v1.0.0-debug.apk > /tmp/PDF智能拆书OCR-v1.0.0-debug.apk.sha256
           ls -lh /tmp/PDF智能拆书OCR-v1.0.0-debug.apk
