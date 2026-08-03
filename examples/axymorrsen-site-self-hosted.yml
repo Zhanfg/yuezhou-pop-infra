@@ -48,6 +48,8 @@ jobs:
         run: npm run check:api
 
       - name: Install Playwright Chromium
+        # Install OS dependencies once on the VPS with:
+        # sudo npx playwright install-deps chromium
         run: npx playwright install chromium
 
       - name: Run repository QA scripts against preview
@@ -137,7 +139,7 @@ jobs:
         run: npm run check:api
 
       - name: Deploy with Wrangler
-        run: npx --no-install wrangler deploy
+        run: npx --yes wrangler@latest deploy
 
       - name: Remove generated local secrets
         if: always()
