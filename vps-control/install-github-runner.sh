@@ -32,13 +32,14 @@ Options:
   --labels <csv>              Custom labels. Default: vps,ci
   --dir <path>                Installation directory. Default: /srv/github-runner
   --version <version>         Runner version without v, or latest
-  --replace                   Replace an existing registration in the target directory
+  --replace                   Replace an existing local registration
   --keep-token-file           Do not delete the one-time token file after registration
   --allow-unverified-download Continue if GitHub's release API exposes no SHA-256 digest
   -h, --help                  Show this help
 
-The token is read from a root-only file, never passed as a command-line argument
-to this script, and is deleted by default after successful registration.
+The registration token is read from a root-only file instead of shell history
+or this installer's arguments. GitHub's config.sh still receives the required
+short-lived token during registration. The token file is deleted by default.
 USAGE
 }
 
@@ -130,15 +131,18 @@ require_root
 [[ -n "$TOKEN_FILE" && -f "$TOKEN_FILE" ]] || die "Token file not found: $TOKEN_FILE"
 valid_username "$RUNNER_USER" || die "Invalid runner username: $RUNNER_USER"
 [[ "$RUNNER_LABELS" =~ ^[A-Za-z0-9_.-]+(,[A-Za-z0-9_.-]+)*$ ]] || die "Invalid labels: $RUNNER_LABELS"
+[[ "$RUNNER_NAME" != *$'\n'* && -n "$RUNNER_NAME" ]] || die "Invalid runner name."
 
 TOKEN_MODE="$(stat -c '%a' "$TOKEN_FILE")"
-if (( 10#$TOKEN_MODE > 600 )); then
-  die "Token file must not be more permissive than mode 600: $TOKEN_FILE"
-fi
+case "$TOKEN_MODE" in
+  400|600) ;;
+  *) die "Token file mode must be 400 or 600, got $TOKEN_MODE: $TOKEN_FILE" ;;
+esac
 
 install_dependencies
 require_command runuser
 require_command systemctl
+require_command sha256sum
 
 case "$(uname -m)" in
   x86_64|amd64) RUNNER_ARCH="x64" ;;
@@ -194,7 +198,7 @@ if [[ -f "$RUNNER_DIR/.runner" ]]; then
     "$RUNNER_DIR/svc.sh" stop || true
     "$RUNNER_DIR/svc.sh" uninstall || true
   fi
-  rm -rf "$RUNNER_DIR"/* "$RUNNER_DIR"/.[!.]* "$RUNNER_DIR"/..?* 2>/dev/null || true
+  find "$RUNNER_DIR" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
 fi
 
 tar -xzf "$ARCHIVE" -C "$RUNNER_DIR"
@@ -214,11 +218,14 @@ CONFIG_ARGS=(
   --name "$RUNNER_NAME"
   --labels "$RUNNER_LABELS"
   --work _work
-  --replace
 )
+if [[ "$REPLACE_EXISTING" == true ]]; then
+  CONFIG_ARGS+=(--replace)
+fi
 
-runuser -u "$RUNNER_USER" -- bash -lc \
-  "cd '$RUNNER_DIR' && ./config.sh ${CONFIG_ARGS[*]@Q}"
+runuser -u "$RUNNER_USER" -- \
+  bash -c 'cd "$1"; shift; exec ./config.sh "$@"' \
+  _ "$RUNNER_DIR" "${CONFIG_ARGS[@]}"
 unset REGISTRATION_TOKEN
 
 "$RUNNER_DIR/svc.sh" install "$RUNNER_USER"
@@ -238,11 +245,10 @@ if [[ "$CONSUME_TOKEN" == true ]]; then
   fi
 fi
 
-SERVICE_NAME="$(systemctl list-unit-files --type=service --no-legend | awk '/^actions\.runner\./ {print $1; exit}')"
-[[ -n "$SERVICE_NAME" ]] || die "Runner service was installed but its systemd unit could not be resolved."
-systemctl is-active --quiet "$SERVICE_NAME" || die "Runner service is not active: $SERVICE_NAME"
+if ! "$RUNNER_DIR/svc.sh" status; then
+  die "Runner service was installed but is not active."
+fi
 
 log "Runner installed successfully."
-log "Service: $SERVICE_NAME"
 log "Directory: $RUNNER_DIR"
 log "Labels: self-hosted, Linux, ${RUNNER_ARCH}, $RUNNER_LABELS"
