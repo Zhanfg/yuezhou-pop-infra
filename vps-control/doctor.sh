@@ -26,7 +26,11 @@ for cmd in bash curl git sshd systemctl; do
 done
 
 if [[ ${EUID} -eq 0 ]]; then
-  sshd -t && pass "sshd configuration is valid" || fail "sshd configuration is invalid"
+  if sshd -t; then
+    pass "sshd configuration is valid"
+  else
+    fail "sshd configuration is invalid"
+  fi
 else
   warn "run as root to validate sshd configuration"
 fi
@@ -37,9 +41,18 @@ if id "$CONTROL_USER" >/dev/null 2>&1; then
   AUTHORIZED_KEYS="$HOME_DIR/.ssh/authorized_keys"
   if [[ -f "$AUTHORIZED_KEYS" ]]; then
     MODE="$(stat -c '%a' "$AUTHORIZED_KEYS")"
-    [[ "$MODE" == "600" ]] && pass "authorized_keys mode is 600" || fail "authorized_keys mode is $MODE, expected 600"
+    if [[ "$MODE" == "600" ]]; then
+      pass "authorized_keys mode is 600"
+    else
+      fail "authorized_keys mode is $MODE, expected 600"
+    fi
+
     KEY_COUNT="$(grep -Ec '^ssh-(ed25519|rsa) ' "$AUTHORIZED_KEYS" || true)"
-    (( KEY_COUNT > 0 )) && pass "authorized_keys contains $KEY_COUNT key(s)" || fail "authorized_keys contains no supported key"
+    if (( KEY_COUNT > 0 )); then
+      pass "authorized_keys contains $KEY_COUNT key(s)"
+    else
+      fail "authorized_keys contains no supported key"
+    fi
   else
     fail "authorized_keys is missing for $CONTROL_USER"
   fi
@@ -51,7 +64,11 @@ if [[ -f "$RUNNER_DIR/.runner" ]]; then
   pass "GitHub runner registration exists in $RUNNER_DIR"
   SERVICE_NAME="$(systemctl list-unit-files --type=service --no-legend | awk '/^actions\.runner\./ {print $1; exit}')"
   if [[ -n "$SERVICE_NAME" ]]; then
-    systemctl is-active --quiet "$SERVICE_NAME" && pass "runner service active: $SERVICE_NAME" || fail "runner service inactive: $SERVICE_NAME"
+    if systemctl is-active --quiet "$SERVICE_NAME"; then
+      pass "runner service active: $SERVICE_NAME"
+    else
+      fail "runner service inactive: $SERVICE_NAME"
+    fi
   else
     fail "runner registration exists but no actions.runner systemd service was found"
   fi
