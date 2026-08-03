@@ -27,8 +27,15 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          mapfile -d '' scripts < <(find . -type f -name '*.sh' -print0)
-          shellcheck "${scripts[@]}"
+          while IFS= read -r -d '' script; do
+            if [[ "$script" == "./vps-control/install-github-runner.sh" ]]; then
+              # The single-quoted child-shell program intentionally expands
+              # $1 and $@ inside the child bash, not in the installer shell.
+              shellcheck --exclude=SC2016 "$script"
+            else
+              shellcheck "$script"
+            fi
+          done < <(find . -type f -name '*.sh' -print0)
 
       - name: Reject committed private keys
         shell: bash
