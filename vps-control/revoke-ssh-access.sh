@@ -21,6 +21,9 @@ Options:
   --lock-account         Lock the account after removing the key
   --purge-user           Remove the account and home directory (destructive)
   -h, --help             Show this help
+
+The per-user sshd restriction remains installed when only one key is removed,
+so any remaining keys stay under the same no-forwarding policy.
 USAGE
 }
 
@@ -74,14 +77,16 @@ if [[ -f "$AUTHORIZED_KEYS" ]]; then
 fi
 
 MATCH_FILE="/etc/ssh/sshd_config.d/90-${CONTROL_USER}-restricted.conf"
-rm -f "$MATCH_FILE"
 
 if [[ "$PURGE_USER" == true ]]; then
+  rm -f "$MATCH_FILE"
   userdel --remove "$CONTROL_USER"
-  log "Removed account and home directory: $CONTROL_USER"
+  log "Removed account, home directory, and per-user sshd policy: $CONTROL_USER"
 elif [[ "$LOCK_ACCOUNT" == true ]]; then
   usermod --lock --shell /usr/sbin/nologin "$CONTROL_USER"
   log "Locked account: $CONTROL_USER"
+else
+  log "Retained restricted sshd policy for any remaining keys."
 fi
 
 sshd -t || die "sshd validation failed after revocation."
