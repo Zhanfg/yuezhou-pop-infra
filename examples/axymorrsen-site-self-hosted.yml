@@ -20,10 +20,11 @@ jobs:
       github.event_name != 'pull_request' ||
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, linux, x64, axymorrsen-vps]
-    timeout-minutes: 30
+    timeout-minutes: 35
     env:
       CONTENT_REMOTE_REQUIRED: "false"
       CI: "true"
+      QA_BASE_URL: http://127.0.0.1:4321
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -46,10 +47,30 @@ jobs:
       - name: Validate API contract
         run: npm run check:api
 
-      - name: Run repository QA scripts
+      - name: Install Playwright Chromium
+        run: npx playwright install chromium
+
+      - name: Run repository QA scripts against preview
         shell: bash
         run: |
           set -Eeuo pipefail
+          mkdir -p artifacts
+          npm run preview -- --host 127.0.0.1 --port 4321 > artifacts/preview.log 2>&1 &
+          preview_pid=$!
+          cleanup() {
+            kill "$preview_pid" 2>/dev/null || true
+            wait "$preview_pid" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+
+          for _ in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:4321/ >/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:4321/ >/dev/null
+
           for script in \
             scripts/qa-home-interactions.mjs \
             scripts/qa-route-layout.mjs \
@@ -61,6 +82,16 @@ jobs:
               node "$script"
             fi
           done
+
+      - name: Upload QA evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: axymorrsen-site-qa-${{ github.run_id }}
+          path: |
+            artifacts/**
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Remove generated local secrets
         if: always()
