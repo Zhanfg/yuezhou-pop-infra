@@ -16,10 +16,36 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Validate shell syntax
-        run: bash -n stack.sh
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          while IFS= read -r -d '' script; do
+            bash -n "$script"
+          done < <(find . -type f -name '*.sh' -print0)
 
       - name: Run ShellCheck
-        run: shellcheck stack.sh
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          while IFS= read -r -d '' script; do
+            if [[ "$script" == "./vps-control/install-github-runner.sh" ]]; then
+              # The single-quoted child-shell program intentionally expands
+              # $1 and $@ inside the child bash, not in the installer shell.
+              shellcheck --exclude=SC2016 "$script"
+            else
+              shellcheck "$script"
+            fi
+          done < <(find . -type f -name '*.sh' -print0)
+
+      - name: Reject committed private keys
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          if grep -RInE --exclude-dir=.git \
+            'BEGIN (OPENSSH |RSA |EC |DSA )?PRIVATE KEY' .; then
+            echo 'Private key material must never be committed.' >&2
+            exit 1
+          fi
 
       - name: Validate Docker Compose
         run: |

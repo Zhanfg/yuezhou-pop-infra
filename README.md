@@ -13,12 +13,14 @@ A reusable, project-agnostic data-service stack for a VPS running 1Panel or plai
 - 数据库备份、恢复、更新、状态检查和日志查看。
 - 默认不把数据库端口暴露到公网。
 - 可供其他 Docker Compose 项目通过共享网络连接。
+- 通用 VPS 控制平面：受限 SSH、公钥撤销、自托管 Runner 安装和网络/资源诊断。
 
 ## 安全边界
 
 这个公开仓库只保存脚本和模板：
 
 - 不保存真实域名、IP、密码、Token、Cookie、私钥或数据库凭据。
+- 允许保存明确标记、可随时撤销的 SSH 公钥；私钥不得进入仓库。
 - `.env` 会在服务器本地生成，并已被 Git 忽略。
 - PostgreSQL、Adminer 和 Valkey 默认只监听 `127.0.0.1`。
 - 项目专用配置应保存在项目自己的私有配置或服务器环境变量中。
@@ -62,6 +64,25 @@ sudo bash stack.sh up tools,cache
 ```bash
 sudo bash stack.sh restore /path/to/backup.dump --yes
 ```
+
+## VPS 控制与编译 CI
+
+控制入口位于 [`vps-control/`](vps-control/README.md)，包括：
+
+- 创建无 sudo 的专用 SSH 控制账户；
+- 安装和撤销指定 SSH 公钥；
+- 安装带 Release 摘要校验的 GitHub self-hosted runner；
+- 检查 SSH、Runner、磁盘、内存和 GitHub/npm/Cloudflare 网络连通性；
+- `axymorrsen-site` 的 VPS 编译、浏览器 QA 与 Cloudflare 部署工作流模板。
+
+首次启用临时控制公钥：
+
+```bash
+sudo bash vps-control/bootstrap-ssh-access.sh
+sudo bash vps-control/doctor.sh
+```
+
+安装 Runner 的具体流程以及撤销方式见 [`vps-control/README.md`](vps-control/README.md)。仓库中的任何脚本都不会要求把私钥或长期 Token 提交到 GitHub。
 
 ## 让其他容器连接数据库
 
