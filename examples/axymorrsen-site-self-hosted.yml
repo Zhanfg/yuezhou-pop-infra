@@ -1,0 +1,115 @@
+name: VPS CI and Cloudflare deploy
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: axymorrsen-site-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, linux, x64, axymorrsen-vps]
+    timeout-minutes: 30
+    env:
+      CONTENT_REMOTE_REQUIRED: "false"
+      CI: "true"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          clean: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Validate API contract
+        run: npm run check:api
+
+      - name: Run repository QA scripts
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          for script in \
+            scripts/qa-home-interactions.mjs \
+            scripts/qa-route-layout.mjs \
+            scripts/qa-content-layout.mjs \
+            scripts/qa-mobile-header.mjs \
+            scripts/qa-floating-bars.mjs \
+            scripts/qa-motion-regressions.mjs; do
+            if [[ -f "$script" ]]; then
+              node "$script"
+            fi
+          done
+
+      - name: Remove generated local secrets
+        if: always()
+        shell: bash
+        run: |
+          rm -f .env .env.* .dev.vars .dev.vars.* 2>/dev/null || true
+
+  deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: validate
+    runs-on: [self-hosted, linux, x64, axymorrsen-vps]
+    timeout-minutes: 30
+    environment: production
+    env:
+      CI: "true"
+      CONTENT_REPOSITORY: Zhanfg/axymorrsen-content
+      CONTENT_REF: main
+      CONTENT_REMOTE_REQUIRED: "true"
+      GITHUB_CONTENT_TOKEN: ${{ secrets.CONTENT_REPO_TOKEN }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - name: Checkout trusted main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+          clean: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Build trusted production output
+        run: npm run build
+
+      - name: Validate API contract
+        run: npm run check:api
+
+      - name: Deploy with Wrangler
+        run: npx --no-install wrangler deploy
+
+      - name: Remove generated local secrets
+        if: always()
+        shell: bash
+        run: |
+          rm -f .env .env.* .dev.vars .dev.vars.* 2>/dev/null || true
