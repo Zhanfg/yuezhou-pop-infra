@@ -7,3 +7,16 @@
 backups/
 .DS_Store
 *.log
+
+# VPS control-plane local state and credentials
+*.token
+*.token.*
+runner-token*
+*.pem
+id_rsa
+id_ed25519
+.credentials
+.credentials_rsaparams
+.runner
+_work/
+vps-control/local/
