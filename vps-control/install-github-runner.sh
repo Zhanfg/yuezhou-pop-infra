@@ -10,6 +10,7 @@ RUNNER_LABELS="vps,ci"
 RUNNER_DIR="/srv/github-runner"
 RUNNER_VERSION="latest"
 ALLOW_UNVERIFIED=false
+ALLOW_PRIVILEGED_USER=false
 CONSUME_TOKEN=true
 REPLACE_EXISTING=false
 
@@ -35,11 +36,17 @@ Options:
   --replace                   Replace an existing local registration
   --keep-token-file           Do not delete the one-time token file after registration
   --allow-unverified-download Continue if GitHub's release API exposes no SHA-256 digest
+  --allow-privileged-user     Permit an existing account in sudo/docker-equivalent groups
   -h, --help                  Show this help
 
 The registration token is read from a root-only file instead of shell history
 or this installer's arguments. GitHub's config.sh still receives the required
 short-lived token during registration. The token file is deleted by default.
+
+For a persistent VPS, use separate low-privilege users and directories for CI
+validation and production deployment. Never place either runner user in sudo,
+docker, lxd, libvirt, wheel, or admin groups unless the risk is explicitly
+accepted with --allow-privileged-user.
 USAGE
 }
 
@@ -64,6 +71,20 @@ install_dependencies() {
   else
     die "Only Debian/Ubuntu apt-based hosts are currently supported."
   fi
+}
+
+assert_runner_user_is_unprivileged() {
+  local groups privileged_group
+  groups="$(id -nG "$RUNNER_USER")"
+  for privileged_group in sudo admin wheel docker lxd libvirt; do
+    if grep -Eq "(^|[[:space:]])${privileged_group}([[:space:]]|$)" <<<"$groups"; then
+      if [[ "$ALLOW_PRIVILEGED_USER" == true ]]; then
+        warn "Runner account $RUNNER_USER belongs to privileged group: $privileged_group"
+      else
+        die "Runner account $RUNNER_USER belongs to privileged group $privileged_group. Use a dedicated account or explicitly pass --allow-privileged-user."
+      fi
+    fi
+  done
 }
 
 while [[ $# -gt 0 ]]; do
@@ -113,6 +134,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --allow-unverified-download)
       ALLOW_UNVERIFIED=true
+      shift
+      ;;
+    --allow-privileged-user)
+      ALLOW_PRIVILEGED_USER=true
       shift
       ;;
     -h|--help)
@@ -187,6 +212,7 @@ fi
 if ! id "$RUNNER_USER" >/dev/null 2>&1; then
   useradd --create-home --shell /bin/bash "$RUNNER_USER"
 fi
+assert_runner_user_is_unprivileged
 
 install -d -m 750 -o "$RUNNER_USER" -g "$RUNNER_USER" "$RUNNER_DIR"
 
@@ -249,6 +275,13 @@ if ! "$RUNNER_DIR/svc.sh" status; then
   die "Runner service was installed but is not active."
 fi
 
+SERVICE_NAME="unknown"
+if [[ -f "$RUNNER_DIR/.service" ]]; then
+  SERVICE_NAME="$(tr -d '\r\n' < "$RUNNER_DIR/.service")"
+fi
+
 log "Runner installed successfully."
+log "Service: $SERVICE_NAME"
+log "User: $RUNNER_USER"
 log "Directory: $RUNNER_DIR"
 log "Labels: self-hosted, Linux, ${RUNNER_ARCH}, $RUNNER_LABELS"
