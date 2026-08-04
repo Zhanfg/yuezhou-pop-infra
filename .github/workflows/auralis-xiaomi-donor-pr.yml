@@ -1,0 +1,66 @@
+name: Auralis Xiaomi 15 Dolby donor PR
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  OTA_URL: https://ultimateota.d.miui.com/OS3.0.303.0.WOCCNXM/dada-ota_full-OS3.0.303.0.WOCCNXM-user-16.0-527efd3838.zip?t=1785809063&s=1f76a21a91fb65fa570ed7718bf7d006
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-pip erofs-utils android-sdk-libsparse-utils binutils file zstd
+          python3 -m pip install --user --break-system-packages android-payload-dumper==2.3.0
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Extract vendor and odm only
+        run: |
+          mkdir -p work/images work/out
+          payload-dumper "$OTA_URL" -l --json > work/partitions.json
+          payload-dumper "$OTA_URL" -p vendor odm -o work/images -j 4
+          ls -lh work/images
+      - name: Mount read-only
+        run: |
+          set -euxo pipefail
+          for p in vendor odm; do
+            img="work/images/$p.img"
+            magic=$(od -An -tx4 -N4 "$img" | tr -d ' ')
+            if [ "$magic" = "ed26ff3a" ] || [ "$magic" = "3aff26ed" ]; then
+              simg2img "$img" "work/images/$p.raw.img"
+              mv "work/images/$p.raw.img" "$img"
+            fi
+            sudo mkdir -p "/mnt/auralis_$p"
+            sudo mount -o loop,ro "$img" "/mnt/auralis_$p"
+          done
+      - name: Collect donor
+        run: |
+          python3 scripts/auralis_collect_donor.py
+          tar -I 'zstd -19 -T0' -cf work/out/Xiaomi15_OS3.0.303.0_Dolby_Donor_20260804.tar.zst -C work/out donor
+          sha256sum work/out/Xiaomi15_OS3.0.303.0_Dolby_Donor_20260804.tar.zst > work/out/Xiaomi15_OS3.0.303.0_Dolby_Donor_20260804.tar.zst.sha256
+          ls -lh work/out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Xiaomi15-OS3.0.303.0-Dolby-Donor
+          path: |
+            work/out/Xiaomi15_OS3.0.303.0_Dolby_Donor_20260804.tar.zst
+            work/out/Xiaomi15_OS3.0.303.0_Dolby_Donor_20260804.tar.zst.sha256
+            work/out/donor/manifest.json
+            work/out/donor/README.md
+          retention-days: 1
+          compression-level: 0
+      - name: Cleanup
+        if: always()
+        run: |
+          sudo umount /mnt/auralis_vendor || true
+          sudo umount /mnt/auralis_odm || true
+          rm -rf work/images
+          df -h
