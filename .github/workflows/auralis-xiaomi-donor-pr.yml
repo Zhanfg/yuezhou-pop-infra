@@ -9,6 +9,7 @@ permissions:
 
 env:
   OTA_URL: https://bigota.d.miui.com/OS3.0.303.0.WOCCNXM/dada-ota_full-OS3.0.303.0.WOCCNXM-user-16.0-527efd3838.zip
+  OTA_MD5: 527efd383850b9f11b53196b4b6fb89e
 
 jobs:
   extract:
@@ -16,21 +17,29 @@ jobs:
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
+      - name: Reclaim disk
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc || true
+          df -h
       - name: Install tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3-pip erofs-utils android-sdk-libsparse-utils binutils file zstd curl
+          sudo apt-get install -y python3-pip erofs-utils android-sdk-libsparse-utils binutils file zstd aria2 unzip
           python3 -m pip install --user --break-system-packages android-payload-dumper==2.3.0
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-      - name: Extract vendor and odm only
+      - name: Download OTA locally and extract vendor/odm
         run: |
           set -euxo pipefail
-          mkdir -p work/images work/out
-          curl -I -L --max-time 30 "$OTA_URL"
-          payload-dumper "$OTA_URL" -l --json | tee work/partitions.json
-          payload-dumper "$OTA_URL" -p vendor odm -o work/images -j 4
+          mkdir -p work/images work/out work/ota
+          aria2c --file-allocation=none --continue=true --max-connection-per-server=8 --split=8 --min-split-size=16M --dir=work/ota --out=ota.zip "$OTA_URL"
+          echo "$OTA_MD5  work/ota/ota.zip" | md5sum -c -
+          ls -lh work/ota/ota.zip
+          payload-dumper work/ota/ota.zip -l --json | tee work/partitions.json
+          payload-dumper work/ota/ota.zip -p vendor odm -o work/images -j 4
+          rm -f work/ota/ota.zip
           ls -lh work/images
           file work/images/*.img
+          df -h
       - name: Mount read-only
         run: |
           set -euxo pipefail
@@ -39,6 +48,7 @@ jobs:
             magic=$(od -An -tx4 -N4 "$img" | tr -d ' ')
             if [ "$magic" = "ed26ff3a" ] || [ "$magic" = "3aff26ed" ]; then
               simg2img "$img" "work/images/$p.raw.img"
+              rm -f "$img"
               mv "work/images/$p.raw.img" "$img"
             fi
             sudo mkdir -p "/mnt/auralis_$p"
@@ -52,7 +62,7 @@ jobs:
           ls -lh work/out
       - uses: actions/upload-artifact@v4
         with:
-          name: Xiaomi15-OS3.0.303.0-Dolby-Donor
+          name: Xiaomi15-OS3.0.303.0-Dolby-Donor-local
           path: |
             work/out/Xiaomi15_OS3.0.303.0_Dolby_Donor_20260804.tar.zst
             work/out/Xiaomi15_OS3.0.303.0_Dolby_Donor_20260804.tar.zst.sha256
@@ -65,5 +75,5 @@ jobs:
         run: |
           sudo umount /mnt/auralis_vendor || true
           sudo umount /mnt/auralis_odm || true
-          rm -rf work/images
+          rm -rf work/ota work/images
           df -h
