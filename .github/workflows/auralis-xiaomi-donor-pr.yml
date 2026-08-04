@@ -8,7 +8,7 @@ permissions:
   contents: read
 
 env:
-  OTA_URL: https://bigota.d.miui.com/OS3.0.303.0.WOCCNXM/dada-ota_full-OS3.0.303.0.WOCCNXM-user-16.0-527efd3838.zip
+  OTA_URL: https://hugeota.d.miui.com/OS3.0.303.0.WOCCNXM/dada-ota_full-OS3.0.303.0.WOCCNXM-user-16.0-527efd3838.zip
   OTA_MD5: 527efd383850b9f11b53196b4b6fb89e
 
 jobs:
@@ -31,7 +31,7 @@ jobs:
         run: |
           set -euxo pipefail
           mkdir -p work/images work/out work/ota
-          aria2c --file-allocation=none --continue=true --max-connection-per-server=8 --split=8 --min-split-size=16M --dir=work/ota --out=ota.zip "$OTA_URL"
+          aria2c --file-allocation=none --continue=true --max-connection-per-server=16 --split=16 --min-split-size=8M --dir=work/ota --out=ota.zip "$OTA_URL"
           echo "$OTA_MD5  work/ota/ota.zip" | md5sum -c -
           ls -lh work/ota/ota.zip
           payload-dumper work/ota/ota.zip -l --json | tee work/partitions.json
@@ -62,7 +62,7 @@ jobs:
           ls -lh work/out
       - uses: actions/upload-artifact@v4
         with:
-          name: Xiaomi15-OS3.0.303.0-Dolby-Donor-local
+          name: Xiaomi15-OS3.0.303.0-Dolby-Donor-hugeota
           path: |
             work/out/Xiaomi15_OS3.0.303.0_Dolby_Donor_20260804.tar.zst
             work/out/Xiaomi15_OS3.0.303.0_Dolby_Donor_20260804.tar.zst.sha256
