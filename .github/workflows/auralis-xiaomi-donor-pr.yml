@@ -7,39 +7,72 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: auralis-xiaomi15-dolby-donor
+  cancel-in-progress: false
+
 env:
-  OTA_URL: https://hugeota.d.miui.com/OS3.0.303.0.WOCCNXM/dada-ota_full-OS3.0.303.0.WOCCNXM-user-16.0-527efd3838.zip
+  OTA_URL_HUGE: https://hugeota.d.miui.com/OS3.0.303.0.WOCCNXM/dada-ota_full-OS3.0.303.0.WOCCNXM-user-16.0-527efd3838.zip
+  OTA_URL_BIG: https://bigota.d.miui.com/OS3.0.303.0.WOCCNXM/dada-ota_full-OS3.0.303.0.WOCCNXM-user-16.0-527efd3838.zip
   OTA_MD5: 527efd383850b9f11b53196b4b6fb89e
 
 jobs:
   extract:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 350
     steps:
       - uses: actions/checkout@v4
+
       - name: Reclaim disk
         run: |
           sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc || true
           df -h
+
       - name: Install tools
         run: |
           sudo apt-get update
           sudo apt-get install -y python3-pip erofs-utils android-sdk-libsparse-utils binutils file zstd aria2 unzip
           python3 -m pip install --user --break-system-packages android-payload-dumper==2.3.0
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-      - name: Download OTA locally and extract vendor/odm
+
+      - name: Download OTA and extract vendor/odm
         run: |
           set -euxo pipefail
           mkdir -p work/images work/out work/ota
-          aria2c --file-allocation=none --continue=true --max-connection-per-server=16 --split=16 --min-split-size=8M --dir=work/ota --out=ota.zip "$OTA_URL"
+
+          # Put both official Xiaomi CDNs on one aria2 input item so they are
+          # treated as mirrors of the same object rather than two downloads.
+          {
+            printf '%s\t%s\n' "$OTA_URL_HUGE" "$OTA_URL_BIG"
+            printf '  dir=work/ota\n'
+            printf '  out=ota.zip\n'
+          } > work/ota/aria2.txt
+
+          aria2c \
+            --input-file=work/ota/aria2.txt \
+            --file-allocation=none \
+            --continue=true \
+            --max-connection-per-server=16 \
+            --split=16 \
+            --min-split-size=8M \
+            --max-tries=30 \
+            --retry-wait=5 \
+            --connect-timeout=30 \
+            --timeout=60 \
+            --summary-interval=60
+
           echo "$OTA_MD5  work/ota/ota.zip" | md5sum -c -
           ls -lh work/ota/ota.zip
+
           payload-dumper work/ota/ota.zip -l --json | tee work/partitions.json
           payload-dumper work/ota/ota.zip -p vendor odm -o work/images -j 4
-          rm -f work/ota/ota.zip
+
+          # The 8 GB archive is no longer needed after the two images exist.
+          rm -f work/ota/ota.zip work/ota/aria2.txt
           ls -lh work/images
           file work/images/*.img
           df -h
+
       - name: Mount read-only
         run: |
           set -euxo pipefail
@@ -54,22 +87,26 @@ jobs:
             sudo mkdir -p "/mnt/auralis_$p"
             sudo mount -o loop,ro "$img" "/mnt/auralis_$p"
           done
+
       - name: Collect donor
         run: |
+          set -euxo pipefail
           python3 scripts/auralis_collect_donor.py
-          tar -I 'zstd -19 -T0' -cf work/out/Xiaomi15_OS3.0.303.0_Dolby_Donor_20260804.tar.zst -C work/out donor
-          sha256sum work/out/Xiaomi15_OS3.0.303.0_Dolby_Donor_20260804.tar.zst > work/out/Xiaomi15_OS3.0.303.0_Dolby_Donor_20260804.tar.zst.sha256
+          tar -I 'zstd -19 -T0' -cf work/out/Xiaomi15_OS3.0.303.0_Dolby_Donor_20260805.tar.zst -C work/out donor
+          sha256sum work/out/Xiaomi15_OS3.0.303.0_Dolby_Donor_20260805.tar.zst > work/out/Xiaomi15_OS3.0.303.0_Dolby_Donor_20260805.tar.zst.sha256
           ls -lh work/out
+
       - uses: actions/upload-artifact@v4
         with:
-          name: Xiaomi15-OS3.0.303.0-Dolby-Donor-hugeota
+          name: Xiaomi15-OS3.0.303.0-Dolby-Donor-final
           path: |
-            work/out/Xiaomi15_OS3.0.303.0_Dolby_Donor_20260804.tar.zst
-            work/out/Xiaomi15_OS3.0.303.0_Dolby_Donor_20260804.tar.zst.sha256
+            work/out/Xiaomi15_OS3.0.303.0_Dolby_Donor_20260805.tar.zst
+            work/out/Xiaomi15_OS3.0.303.0_Dolby_Donor_20260805.tar.zst.sha256
             work/out/donor/manifest.json
             work/out/donor/README.md
           retention-days: 1
           compression-level: 0
+
       - name: Cleanup
         if: always()
         run: |
