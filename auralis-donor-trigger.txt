@@ -1,0 +1,1 @@
+Trigger Xiaomi 15 donor extraction at 2026-08-05T01:17:00Z using dual official CDN mirrors, 350-minute timeout, immediate OTA deletion, and final image cleanup.
