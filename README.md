@@ -1,5 +1,7 @@
 # OnePanel Data Stack
 
+> Repository scope: project-agnostic VPS data infrastructure only. The current repository name is historical; this repository is **not** the Yuezhou application infrastructure and must not host Android ROM extraction, Dolby donor collection, or other unrelated project workflows.
+
 A reusable, project-agnostic data-service stack for a VPS running 1Panel or plain Docker Compose.
 
 一个可公开复用、与具体项目无关的数据服务部署模板。适合已经安装 1Panel 的 Ubuntu / Debian VPS，也可以直接在普通 Docker 主机上运行。
